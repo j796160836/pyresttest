@@ -782,19 +782,6 @@ def run_testsets(testsets):
                     else:       
                         print('\033[91m' + sub_test_case + '\033[0m')
 
-        for single_test_case in group_test_case:
-            sub_test_case = "{0} -- {1}".format(single_test_case['test_case_name'],single_test_case['status'])
-            if single_test_case['status'] == 'Passed':
-                if myconfig.skip_term_colors:
-                    print(sub_test_case)
-                else:       
-                    print('\033[90m' + sub_test_case + '\033[0m')
-            else:
-                if myconfig.skip_term_colors:
-                    print(sub_test_case)
-                else:       
-                    print('\033[91m' + sub_test_case + '\033[0m')
-            
         if myconfig.junit:
             outputxml = open("test-"+group.lower().replace(" ","-")+".xml","w")
             xml = """<?xml version="1.0" encoding="UTF-8"?>
