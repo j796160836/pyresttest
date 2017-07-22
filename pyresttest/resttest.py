@@ -15,6 +15,7 @@ from optparse import OptionParser
 from email import message_from_string  # For headers handling
 import time
 import datetime
+import cgi
 
 try:
     from cStringIO import StringIO as MyIO
@@ -685,7 +686,6 @@ def run_testsets(testsets):
                 group_failure_counts[test.group] = 0
 
             result = run_test(test, test_config=myconfig, context=context, curl_handle=curl_handle)
-            result.body = None  # Remove the body, save some memory!
 
             if not result.passed:  # Print failure, increase failure counts for that test group
                 # Use result test URL to allow for templating
@@ -705,6 +705,8 @@ def run_testsets(testsets):
                 group_failure_counts[test.group] = failures
 
             else:  # Test passed, print results
+                result.headers = None
+                result.body = None  # Remove the body, save some memory!
                 logger.info('Test Succeeded: ' + test.name +
                             " URL=" + test.url + " Group=" + test.group)
 
@@ -778,24 +780,41 @@ def run_testsets(testsets):
                         print('\033[91m' + sub_test_case + '\033[0m')
 
         if myconfig.junit:
+            systemOut = ""
             outputxml = open("test-"+group.lower().replace(" ","-")+".xml","w")
             xml = """<?xml version="1.0" encoding="UTF-8"?>
 <testsuite errors="0" failures="%d" skipped="0" name="%s" tests="%d" timestamp="%s" hostname="%s">
 <properties>  </properties>
-""" % (failures,group,test_count,testenddate,os.uname()[1])
+""" % (failures,cgi.escape(group),test_count,testenddate,cgi.escape(os.uname()[1]))
             for r in group_results[group]:
                 if r.passed:
-                    xml += """<testcase classname="%s" name="%s"></testcase>""" % (r.test.group,r.test.name)
+                    xml += """<testcase classname="%s" name="%s"></testcase>""" % (cgi.escape(r.test.group),cgi.escape(r.test.name))
                     xml += "\n"
                 else:
-                    xml += """<testcase classname="%s" name="%s">""" % (r.test.group,r.test.name)
+                    xml += """<testcase classname="%s" name="%s">""" % (cgi.escape(r.test.group),cgi.escape(r.test.name))
+                    systemOut += ("## Failed case: %s\n" % r.test.name)
+                    systemOut += ("------\n")
+                    systemOut += ("### REQUEST:\n")
+                    systemOut += ("%s %s\n" % (r.test.method, r.test.url))
+                    if r.test.headers != {}:
+                        systemOut += ("#### Headers:\n")
+                        systemOut += ("%s\n" % (r.test.headers))
+                    if r.test.body:
+                        systemOut += ("#### Body:\n")
+                        systemOut += ("%s\n" % (r.test.body))
+                    systemOut += ("### RESPONSE [%s]:\n" % (r.response_code))
+                    systemOut += ("%s\n\n" % (r.body))
+                    systemOut += ("### ERROR MESSAGE:\n")
                     for failure in r.failures:
+                        systemOut += ("%s\n" % (failure.message))
                         if failure.details:
-                            failure.message += "\n" + str(failure.details)
-                        xml += """<failure type="%s">%s</failure>""" % (failure.failure_type,failure.message)
-                    xml += "</testcase>\n"                        
-            xml += """<system-out>  </system-out>
-<system-err>  </system-err>
+                            failure.message += ("%s\n" % (str(failure.details)))
+                            systemOut += ("%s\n" % (str(failure.details)))
+                        xml += """<failure type="%s">%s</failure>""" % (cgi.escape(failure.failure_type),cgi.escape(failure.message))
+                    xml += "</testcase>\n"
+                    systemOut += ("\n-----------------------------------\n")
+            xml += """<system-out>\n%s</system-out>""" % (cgi.escape(systemOut))
+            xml += """<system-err>  </system-err>
 </testsuite>
 """ 
             outputxml.write(xml)
