@@ -14,6 +14,7 @@ import threading
 from optparse import OptionParser
 from email import message_from_string  # For headers handling
 import time
+import datetime
 
 try:
     from cStringIO import StringIO as MyIO
@@ -113,6 +114,9 @@ class TestConfig:
     verbose = False
     ssl_insecure = False
     skip_term_colors = False  # Turn off output term colors
+    noproxy = False
+    cert = None
+    cert_password = None
 
     # Binding and creation of generators
     variable_binds = None
@@ -296,7 +300,12 @@ def parse_configuration(node, base_config=None):
                 gen = parse_generator(generator_config)
                 gen_map[str(generator_name)] = gen
             test_config.generators = gen_map
-
+        elif key == u'cert':
+            if ":" in value:
+                test_config.cert,test_config.cert_password = value.split(":")
+            else:
+                test_config.cert = value
+                
     return test_config
 
 
@@ -334,6 +343,12 @@ def run_test(mytest, test_config=TestConfig(), context=None, curl_handle=None, *
     if test_config.ssl_insecure:
         curl.setopt(pycurl.SSL_VERIFYPEER, 0)
         curl.setopt(pycurl.SSL_VERIFYHOST, 0)
+    if test_config.cert != None:
+        curl.setopt(pycurl.SSLCERT, test_config.cert)
+        if test_config.cert_password != None:
+            curl.setopt(pycurl.SSLKEYPASSWD, test_config.cert_password)
+    if test_config.noproxy:
+        curl.setopt(pycurl.NOPROXY,test_config.noproxy)
 
     result.passed = None
 
@@ -346,7 +361,9 @@ def run_test(mytest, test_config=TestConfig(), context=None, curl_handle=None, *
         print("HEADERS:")
         print("%s" % (templated_test.headers))
         if mytest.body is not None:
-            print("\n%s" % templated_test.body)
+            if test_config.interactive:
+                print("REQUEST BODY:")
+            print("%s" % templated_test.body)
         raw_input("Press ENTER when ready (%d): " % (mytest.delay))
 
     if mytest.delay > 0:
@@ -490,6 +507,11 @@ def run_benchmark(benchmark, test_config=TestConfig(), context=None, *args, **kw
         templated = benchmark.realize(my_context)
         curl = templated.configure_curl(
             timeout=test_config.timeout, context=my_context, curl_handle=curl)
+        if test_config.verbose:
+            curl.setopt(pycurl.VERBOSE, True)
+        if test_config.ssl_insecure:
+            curl.setopt(pycurl.SSL_VERIFYPEER, 0)
+            curl.setopt(pycurl.SSL_VERIFYHOST, 0)
         # Do not store actual response body at all.
         curl.setopt(pycurl.WRITEFUNCTION, lambda x: None)
         curl.perform()
@@ -506,6 +528,11 @@ def run_benchmark(benchmark, test_config=TestConfig(), context=None, *args, **kw
             timeout=test_config.timeout, context=my_context, curl_handle=curl)
         # Do not store actual response body at all.
         curl.setopt(pycurl.WRITEFUNCTION, lambda x: None)
+        if test_config.verbose:
+            curl.setopt(pycurl.VERBOSE, True)
+        if test_config.ssl_insecure:
+            curl.setopt(pycurl.SSL_VERIFYPEER, 0)
+            curl.setopt(pycurl.SSL_VERIFYHOST, 0)
 
         try:  # Run the curl call, if it errors, then add to failure counts for benchmark
             curl.perform()
@@ -724,6 +751,7 @@ def run_testsets(testsets):
         print("===================================")
 
     # Print summary results
+    testenddate = datetime.datetime.now().isoformat()
     for group in sorted(group_results.keys()):
         test_count = len(group_results[group])
         failures = group_failure_counts[group]
@@ -740,6 +768,7 @@ def run_testsets(testsets):
                 print('\033[91m' + output_string + '\033[0m')
             else:
                 print('\033[92m' + output_string + '\033[0m')
+
         for single_test_case in group_test_case:
             sub_test_case = "{0} -- {1}".format(single_test_case['test_case_name'],single_test_case['status'])
             if single_test_case['status'] == 'Passed':
@@ -752,6 +781,28 @@ def run_testsets(testsets):
                     print(sub_test_case)
                 else:       
                     print('\033[91m' + sub_test_case + '\033[0m')
+            
+        if myconfig.junit:
+            outputxml = open("test-"+group.lower().replace(" ","-")+".xml","w")
+            xml = """<?xml version="1.0" encoding="UTF-8"?>
+<testsuite errors="0" failures="%d" skipped="0" name="%s" tests="%d" timestamp="%s" hostname="%s">
+<properties>  </properties>
+""" % (failures,group,test_count,testenddate,os.uname()[1])
+            for r in group_results[group]:
+                if r.passed:
+                    xml += """<testcase classname="%s" name="%s"></testcase>""" % (r.test.group,r.test.name)
+                    xml += "\n"
+                else:
+                    xml += """<testcase classname="%s" name="%s">""" % (r.test.group,r.test.name)
+                    for failure in r.failures:
+                        xml += """<failure type="%s">%s</failure>""" % (failure.failure_type,failure.message)
+                    xml += "</testcase>\n"                        
+            xml += """<system-out>  </system-out>
+<system-err>  </system-err>
+</testsuite>
+""" 
+            outputxml.write(xml)
+            outputxml.close()
 
     return total_failures
 
@@ -820,6 +871,7 @@ def main(args):
         interactive   - OPTIONAL - mode that prints info before and after test exectuion and pauses for user input for each test
         absolute_urls - OPTIONAL - mode that treats URLs in tests as absolute/full URLs instead of relative URLs
         skip_term_colors - OPTIONAL - mode that turn off the output term colors
+        noproxy       - OPTIONAL - mode that behaves like curl --noproxy
     """
 
     if 'log' in args and args['log'] is not None:
@@ -873,6 +925,12 @@ def main(args):
         if 'skip_term_colors' in args and args['skip_term_colors'] is not None:
             t.config.skip_term_colors = safe_to_bool(args['skip_term_colors'])
 
+        if 'noproxy' in args and args['noproxy'] is not None:
+            t.config.noproxy = args['noproxy']
+
+        if 'junit' in args and args['junit'] is not None:
+            t.config.junit = safe_to_bool(args['junit'])
+
     # Execute all testsets
     failures = run_testsets(tests)
 
@@ -907,6 +965,10 @@ def parse_command_line_args(args_in):
                       action="store_true", dest="absolute_urls")
     parser.add_option(u'--skip_term_colors', help='Turn off the output term colors',
                       action='store_true', default=False, dest="skip_term_colors")
+    parser.add_option(u'--noproxy', help='Comma-separated list of hosts which do not use a proxy',
+                      action="store", type="string")
+    parser.add_option(u'--junit', help='Output JUnit XML for each test group',
+                      action='store_true', default=False, dest="junit")
 
     (args, unparsed_args) = parser.parse_args(args_in)
     args = vars(args)
