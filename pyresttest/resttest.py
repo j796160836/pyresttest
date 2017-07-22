@@ -790,6 +790,8 @@ def run_testsets(testsets):
                 else:
                     xml += """<testcase classname="%s" name="%s">""" % (r.test.group,r.test.name)
                     for failure in r.failures:
+                        if failure.details:
+                            failure.message += "\n" + str(failure.details)
                         xml += """<failure type="%s">%s</failure>""" % (failure.failure_type,failure.message)
                     xml += "</testcase>\n"                        
             xml += """<system-out>  </system-out>
