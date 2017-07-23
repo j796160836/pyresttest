@@ -442,7 +442,13 @@ def run_test(mytest, test_config=TestConfig(), context=None, curl_handle=None, *
             logger.debug("no validators found")
 
         # Only do context updates if test was successful
-        mytest.update_context_after(result.body, head, my_context)
+        try:
+            mytest.update_context_after(result.body, head, my_context)
+        except Exception as e:
+            trace = traceback.format_exc()
+            result.failures.append(Failure(message="Context updates exception: {0}".format(
+                e), details=trace, failure_type=validators.FAILURE_TEST_EXCEPTION))
+            result.passed = False
 
     # Print response body if override is set to print all *OR* if test failed
     # (to capture maybe a stack trace)
