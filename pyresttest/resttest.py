@@ -812,18 +812,18 @@ def run_testsets(testsets):
                     systemOut += ("%s\n\n" % (r.body))
                     systemOut += ("### ERROR MESSAGE:\n")
                     for failure in r.failures:
-                        systemOut += ("%s\n" % (failure.message))
+                        systemOut += ("%s\n" % (failure.message.decode('utf-8')))
                         if failure.details:
                             failure.message += ("%s\n" % (str(failure.details)))
                             systemOut += ("%s\n" % (str(failure.details)))
-                        xml += """<failure type="%s">%s</failure>""" % (cgi.escape(failure.failure_type),cgi.escape(failure.message))
+                        xml += """<failure type="%s">%s</failure>""" % (cgi.escape(failure.failure_type),cgi.escape(failure.message.decode('utf-8')))
                     xml += "</testcase>\n"
                     systemOut += ("\n-----------------------------------\n")
             xml += """<system-out>\n%s</system-out>""" % (cgi.escape(systemOut))
             xml += """<system-err>  </system-err>
 </testsuite>
 """ 
-            outputxml.write(xml)
+            outputxml.write(xml.encode('utf-8'))
             outputxml.close()
 
     return total_failures
