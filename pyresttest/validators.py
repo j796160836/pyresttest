@@ -491,7 +491,7 @@ class ExtractTestValidator(AbstractValidator):
             failure = Failure(details=self.get_readable_config(
                 context=context), validator=self, failure_type=FAILURE_VALIDATOR_FAILED)
             failure.message = "Extract and test validator failed on test: {0}({1})".format(
-                self.test_name, extracted.encode('utf-8'))
+                self.test_name, ('' if extracted is None else extracted.encode('utf-8')))
             # TODO can we do better with details?
             return failure
 
